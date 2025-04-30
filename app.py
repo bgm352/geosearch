@@ -1,10 +1,8 @@
 import streamlit as st
 import pandas as pd
-import numpy as np
 import plotly.express as px
 import plotly.graph_objects as go
-import altair as alt
-from datetime import datetime, timedelta
+from datetime import datetime
 from utils import (
     get_interest_over_time,
     get_interest_by_region,
@@ -14,26 +12,23 @@ from utils import (
     forecast_trends
 )
 
-# --- Helper Functions ---
+# ----------------- Helper Functions -----------------
 
-def fetch_with_fallback(fetch_func, *args, **kwargs):
-    """Try fetching data, fallback to broader region/time if empty."""
-    df = fetch_func(*args, **kwargs)
+def fetch_with_fallback(fetch_func, keywords, timeframe, geo, **kwargs):
+    df = fetch_func(keywords, timeframe, geo, **kwargs)
     if df is not None and not df.empty:
         return df
-    geo = kwargs.get('geo', 'US')
-    timeframe = kwargs.get('timeframe', 'today 12-m')
-    if geo != 'US':
-        kwargs['geo'] = 'US'
-        df = fetch_func(*args, **kwargs)
+    # Try fallback geo 'US' if geo is state-level
+    if geo.startswith("US-"):
+        df = fetch_func(keywords, timeframe, "US", **kwargs)
         if df is not None and not df.empty:
-            st.info("No data for selected region. Showing US-wide data instead.")
+            st.info(f"No data for {geo}. Showing data for US instead.")
             return df
-    if timeframe != 'today 12-m':
-        kwargs['timeframe'] = 'today 12-m'
-        df = fetch_func(*args, **kwargs)
+    # Try fallback timeframe 'today 12-m'
+    if timeframe != "today 12-m":
+        df = fetch_func(keywords, "today 12-m", geo, **kwargs)
         if df is not None and not df.empty:
-            st.info("No data for selected timeframe. Showing 12 months instead.")
+            st.info(f"No data for timeframe {timeframe}. Showing past 12 months instead.")
             return df
     return pd.DataFrame()
 
@@ -46,7 +41,7 @@ def show_download_button(df, label, filename):
             mime='text/csv'
         )
 
-# --- Page Config ---
+# ----------------- Page Config -----------------
 
 st.set_page_config(
     page_title="Healthcare SEO & Trends Dashboard",
@@ -57,7 +52,7 @@ st.set_page_config(
 
 st.title("Healthcare SEO & Trends Dashboard")
 
-# --- Sidebar ---
+# ----------------- Sidebar Controls -----------------
 
 st.sidebar.title("Dashboard Controls")
 
@@ -70,33 +65,25 @@ timeframe_options = {
     "Past 5 years": "today 5-y",
     "2010 to present": "2010-01-01 " + datetime.now().strftime("%Y-%m-%d")
 }
-timeframe = st.sidebar.selectbox("Select Time Range", list(timeframe_options.keys()), help="Choose how far back to analyze trends.")
+timeframe = st.sidebar.selectbox("Select Time Range", list(timeframe_options.keys()))
 
 # Location selector
 geo_options = ["US", "World"]
 us_states = ["AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA", "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ", "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT", "VA", "WA", "WV", "WI", "WY"]
 geo_options.extend([f"US-{state}" for state in us_states])
-geo = st.sidebar.selectbox("Select Location", geo_options, help="Choose a country, state, or 'World'.")
+geo = st.sidebar.selectbox("Select Location", geo_options)
 
 # Default keywords for healthcare/medical professionals
 default_keywords = ["doctor near me", "medical clinic", "healthcare provider", "physician"]
-keywords_input = st.sidebar.text_area("Enter keywords (one per line)", "\n".join(default_keywords), help="Enter up to 5 keywords. Use common terms for best results.")
+keywords_input = st.sidebar.text_area("Enter keywords (one per line)", "\n".join(default_keywords))
 keywords = [kw.strip() for kw in keywords_input.split("\n") if kw.strip()]
 
-if st.sidebar.button("Suggest Popular Keywords"):
-    st.sidebar.info("Try: doctor, hospital, urgent care, telehealth, flu, covid")
-
-if not keywords:
-    st.warning("Please enter at least one keyword to analyze.")
-    st.stop()
-
-if any(len(kw) < 2 for kw in keywords):
-    st.warning("Please enter more descriptive keywords (at least 2 characters each).")
-    st.stop()
-
 if len(keywords) > 5:
-    st.sidebar.warning("Google Trends only supports up to 5 keywords per request. Only the first 5 will be used.")
+    st.warning("Google Trends only supports up to 5 keywords per request. Only the first 5 will be used.")
     keywords = keywords[:5]
+if not keywords:
+    st.error("Please enter at least one keyword.")
+    st.stop()
 
 # Compare with competitors option
 compare_competitors = st.sidebar.checkbox("Compare with top competitors", True)
@@ -107,13 +94,13 @@ show_forecast = st.sidebar.checkbox("Show forecast", True)
 forecast_period = st.sidebar.slider("Forecast period (days)", 30, 365, 90) if show_forecast else 90
 map_opacity = st.sidebar.slider("Map opacity", 0.2, 1.0, 0.7, 0.1)
 
-# --- Main Content ---
+# ----------------- Main Content -----------------
 
 st.header("Overview")
 
 with st.spinner("Fetching Google Trends data..."):
     interest_over_time_df = fetch_with_fallback(
-        get_interest_over_time, keywords, timeframe_options[timeframe], geo=geo
+        get_interest_over_time, keywords, timeframe_options[timeframe], geo
     )
 
 col1, col2, col3, col4 = st.columns(4)
@@ -146,7 +133,6 @@ try:
         fig = px.line(interest_over_time_df, x=interest_over_time_df.index, y=keywords,
                       title="Search Interest Trends",
                       labels={"value": "Search Interest", "variable": "Keyword", "date": "Date"})
-        # Add forecast if requested
         if show_forecast:
             forecast_data = forecast_trends(interest_over_time_df, keywords, forecast_period)
             if forecast_data is not None:
@@ -189,7 +175,7 @@ with geo_tab1:
             get_interest_by_region,
             [selected_keyword_for_map], 
             timeframe_options[timeframe], 
-            geo=geo
+            geo
         )
     try:
         if not interest_by_region_df.empty:
@@ -253,7 +239,7 @@ with geo_tab2:
             get_interest_by_dma,
             [selected_keyword_for_dma], 
             timeframe_options[timeframe], 
-            geo=geo
+            geo
         )
     try:
         if not interest_by_dma_df.empty:
@@ -407,7 +393,7 @@ if compare_competitors:
         providers = providers[:5]
     with st.spinner("Fetching competitor data..."):
         providers_interest = fetch_with_fallback(
-            get_interest_over_time, providers, timeframe_options[timeframe], geo=geo
+            get_interest_over_time, providers, timeframe_options[timeframe], geo
         )
     try:
         if not providers_interest.empty:
@@ -451,3 +437,4 @@ if compare_competitors:
 st.markdown("---")
 st.markdown("Healthcare SEO & Trends Dashboard | Data from Google Trends")
 st.markdown("Last updated: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
