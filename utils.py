@@ -1,8 +1,5 @@
-# utils.py
-
 import pandas as pd
 from pytrends.request import TrendReq
-import time
 from sklearn.linear_model import LinearRegression
 import numpy as np
 
@@ -13,7 +10,6 @@ def get_interest_over_time(keywords, timeframe, geo):
     if not keywords:
         return pd.DataFrame()
     pytrends = get_pytrends()
-    # Google Trends allows max 5 keywords per request
     keywords = keywords[:5]
     try:
         pytrends.build_payload(keywords, cat=0, timeframe=timeframe, geo=geo)
@@ -39,7 +35,6 @@ def get_interest_by_region(keywords, timeframe, geo, resolution='COUNTRY'):
         return pd.DataFrame()
 
 def get_interest_by_dma(keywords, timeframe, geo):
-    # For US only, we can get DMA level data, otherwise default to city
     resolution = 'DMA' if geo == 'US' else 'CITY'
     if not keywords:
         return pd.DataFrame()
@@ -93,10 +88,10 @@ def forecast_trends(historical_df, keywords, forecast_period=90):
         if kw in historical_df.columns:
             try:
                 y = historical_df[kw].values
-                X = np.array(range(len(y))).reshape(-1, 1)
+                X = np.arange(len(y)).reshape(-1, 1)
                 model = LinearRegression()
                 model.fit(X, y)
-                future_X = np.array(range(len(y), len(y) + forecast_period)).reshape(-1, 1)
+                future_X = np.arange(len(y), len(y) + forecast_period).reshape(-1, 1)
                 future_y = model.predict(future_X)
                 if result_df.empty:
                     result_df = pd.DataFrame(index=future_dates)
@@ -104,4 +99,5 @@ def forecast_trends(historical_df, keywords, forecast_period=90):
             except Exception as e:
                 print(f"Error forecasting for {kw}: {e}")
     return result_df
+
 
