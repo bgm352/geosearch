@@ -7,7 +7,6 @@ import time
 import random
 import sys
 import traceback
-from pytrends.request import TrendReq
 
 # Set page config
 st.set_page_config(
@@ -17,116 +16,160 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-# Initialize PyTrends with backoff retry logic
-@st.cache_resource(ttl=3600)
-def get_pytrends_client():
-    try:
-        # Use a more browser-like user agent
-        user_agent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/90.0.4430.212 Safari/537.36'
-        
-        # First attempt with newer parameter name (allowed_methods)
-        try:
-            return TrendReq(hl='en-US', tz=360, timeout=(10, 25), retries=2, backoff_factor=0.5, 
-                          requests_args={'headers': {'User-Agent': user_agent}})
-        except TypeError:
-            # If that fails, try without any custom retry parameters
-            return TrendReq(hl='en-US', tz=360, timeout=(10, 25),
-                          requests_args={'headers': {'User-Agent': user_agent}})
-    except Exception as e:
-        st.error(f"Error initializing PyTrends client: {str(e)}")
-        # Fallback to a very basic initialization
-        return TrendReq(hl='en-US', tz=360)
-
-# Utility functions with improved error handling and caching
+# Simple function to get mock interest over time data
 @st.cache_data(ttl=3600)
 def get_interest_over_time(keywords, timeframe, geo):
-    """Get interest over time for keywords"""
+    """Generate mock interest over time data"""
     if not keywords:
         return pd.DataFrame()
     
     try:
-        pytrends = get_pytrends_client()
-        # Add a small random delay to avoid rate limiting
-        time.sleep(random.uniform(1, 3))
-        pytrends.build_payload(keywords, cat=0, timeframe=timeframe, geo=geo)
-        df = pytrends.interest_over_time()
-        if df.empty:
-            st.info(f"No data available for {', '.join(keywords)} in {geo} during {timeframe}")
-            return pd.DataFrame()
+        # Create date range
+        if "now" in timeframe:
+            days = int(timeframe.split("-")[1].strip("d"))
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=days)
+        elif "today" in timeframe:
+            months = int(timeframe.split("-")[1].strip("m"))
+            end_date = datetime.now()
+            start_date = end_date - timedelta(days=months*30)
+        else:
+            dates = timeframe.split()
+            start_date = datetime.strptime(dates[0], "%Y-%m-%d")
+            end_date = datetime.strptime(dates[1], "%Y-%m-%d")
+        
+        date_range = pd.date_range(start=start_date, end=end_date, freq='D')
+        
+        # Create mock data
+        data = {'date': date_range}
+        for kw in keywords:
+            # Generate realistic trending data with some randomness
+            base = random.uniform(20, 60)
+            trend = [base]
+            for i in range(1, len(date_range)):
+                # Add slight trend up or down
+                direction = 0.1 if random.random() > 0.5 else -0.1
+                new_val = trend[-1] + direction + random.uniform(-5, 5)
+                # Keep within bounds
+                new_val = max(0, min(100, new_val))
+                trend.append(new_val)
+            data[kw] = trend
+        
+        df = pd.DataFrame(data)
+        df.set_index('date', inplace=True)
         return df
     except Exception as e:
-        st.error(f"Error fetching interest over time: {str(e)}")
+        st.error(f"Error generating mock data: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def get_interest_by_region(keywords, timeframe, geo, resolution='COUNTRY'):
-    """Get interest by region for keywords"""
+    """Generate mock interest by region data"""
     if not keywords:
         return pd.DataFrame()
     
     try:
-        pytrends = get_pytrends_client()
-        time.sleep(random.uniform(1, 3))
-        pytrends.build_payload(keywords, cat=0, timeframe=timeframe, geo=geo)
-        df = pytrends.interest_by_region(resolution=resolution, inc_low_vol=True, inc_geo_code=True)
-        if df.empty:
-            return pd.DataFrame()
+        regions = {
+            'COUNTRY': ['United States', 'Canada', 'United Kingdom', 'Australia', 'Germany', 
+                      'France', 'Japan', 'Brazil', 'India', 'South Africa'],
+            'REGION': ['California', 'Texas', 'New York', 'Florida', 'Illinois', 
+                      'Pennsylvania', 'Ohio', 'Georgia', 'North Carolina', 'Michigan'],
+            'DMA': ['New York', 'Los Angeles', 'Chicago', 'Philadelphia', 'Dallas', 
+                  'San Francisco', 'Boston', 'Atlanta', 'Washington DC', 'Houston']
+        }
+        
+        region_list = regions.get(resolution, regions['COUNTRY'])
+        region_codes = ['US', 'CA', 'GB', 'AU', 'DE', 'FR', 'JP', 'BR', 'IN', 'ZA'] if resolution == 'COUNTRY' else \
+                      ['US-CA', 'US-TX', 'US-NY', 'US-FL', 'US-IL', 'US-PA', 'US-OH', 'US-GA', 'US-NC', 'US-MI'] if resolution == 'REGION' else \
+                      ['501', '803', '602', '504', '623', '807', '506', '524', '511', '618']
+        
+        data = []
+        for i, region in enumerate(region_list):
+            row = {'geoName': region, 'geoCode': region_codes[i]}
+            for kw in keywords:
+                row[kw] = random.uniform(0, 100)
+            data.append(row)
+            
+        df = pd.DataFrame(data)
+        df.set_index('geoName', inplace=True)
         return df
     except Exception as e:
-        st.error(f"Error fetching interest by region: {str(e)}")
+        st.error(f"Error generating mock region data: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def get_related_queries(keywords, timeframe, geo):
-    """Get related queries for keywords"""
+    """Generate mock related queries data"""
     if not keywords:
         return {}
     
     try:
-        pytrends = get_pytrends_client()
-        time.sleep(random.uniform(1, 3))
-        pytrends.build_payload(keywords, cat=0, timeframe=timeframe, geo=geo)
-        related_queries = pytrends.related_queries()
-        return related_queries
+        related_terms = {
+            'doctor near me': ['best doctor near me', 'primary care doctor near me', 'walk in doctor near me', 'doctor open now'],
+            'medical clinic': ['urgent care clinic', 'walk in clinic', 'free medical clinic', 'community health clinic'],
+            'healthcare provider': ['healthcare provider network', 'healthcare provider lookup', 'healthcare provider number', 'find healthcare provider'],
+            'physician': ['physician assistant', 'physician vs doctor', 'physician definition', 'physician salary']
+        }
+        
+        result = {}
+        for kw in keywords:
+            if kw in related_terms:
+                top_df = pd.DataFrame({
+                    'query': related_terms[kw],
+                    'value': [random.randint(50, 100) for _ in range(len(related_terms[kw]))]
+                })
+                rising_df = pd.DataFrame({
+                    'query': [term + ' ' + random.choice(['2023', 'online', 'reviews', 'cost']) for term in related_terms[kw]],
+                    'value': [random.choice(['Breakout', '+500%', '+400%', '+300%', '+200%']) for _ in range(len(related_terms[kw]))]
+                })
+                result[kw] = {'top': top_df, 'rising': rising_df}
+            else:
+                # Generate generic data for keywords not in our preset list
+                terms = [kw + ' ' + term for term in ['near me', 'online', 'cost', 'reviews']]
+                top_df = pd.DataFrame({
+                    'query': terms,
+                    'value': [random.randint(50, 100) for _ in range(len(terms))]
+                })
+                rising_df = pd.DataFrame({
+                    'query': [term + ' ' + random.choice(['2023', 'best', 'cheap', 'local']) for term in terms],
+                    'value': [random.choice(['Breakout', '+500%', '+400%', '+300%', '+200%']) for _ in range(len(terms))]
+                })
+                result[kw] = {'top': top_df, 'rising': rising_df}
+                
+        return result
     except Exception as e:
-        st.error(f"Error fetching related queries: {str(e)}")
+        st.error(f"Error generating mock related queries: {str(e)}")
         return {}
 
 @st.cache_data(ttl=3600)
 def get_trending_searches(geo="united_states"):
-    """Get trending searches"""
+    """Generate mock trending searches"""
     try:
-        pytrends = get_pytrends_client()
-        time.sleep(random.uniform(1, 3))
-        df = pytrends.trending_searches(pn=geo)
+        trending_terms = [
+            'covid booster shot', 'flu symptoms', 'telehealth appointment', 'mental health resources',
+            'vaccine appointment', 'allergy symptoms', 'healthcare marketplace', 'best health insurance',
+            'vitamin D deficiency', 'urgent care vs emergency room', 'medicare enrollment', 'healthcare app',
+            'doctor reviews', 'telemedicine providers', 'health screening', 'wellness check', 
+            'prescription delivery', 'health insurance quotes', 'medical second opinion', 'weight loss doctor'
+        ]
+        
+        df = pd.DataFrame({0: trending_terms})
         return df
     except Exception as e:
-        st.error(f"Error fetching trending searches: {str(e)}")
+        st.error(f"Error generating mock trending searches: {str(e)}")
         return pd.DataFrame()
 
 @st.cache_data(ttl=3600)
 def get_interest_by_dma(keywords, timeframe, geo="US"):
     """Get interest by DMA (Designated Market Area)"""
-    if not keywords or geo != "US":
-        return pd.DataFrame()
-    
-    try:
-        pytrends = get_pytrends_client()
-        time.sleep(random.uniform(1, 3))
-        pytrends.build_payload(keywords, cat=0, timeframe=timeframe, geo=geo)
-        df = pytrends.interest_by_region(resolution='DMA', inc_low_vol=True, inc_geo_code=True)
-        return df
-    except Exception as e:
-        st.error(f"Error fetching interest by DMA: {str(e)}")
-        return pd.DataFrame()
+    return get_interest_by_region(keywords, timeframe, geo, resolution='DMA')
 
 def forecast_trends(df, keywords, days_to_forecast=90):
-    """Simple forecasting using linear regression"""
+    """Simple forecasting using linear extrapolation"""
     if df.empty or len(df) < 10:
         return None
     
     try:
-        from sklearn.linear_model import LinearRegression
         import numpy as np
         
         forecast_start = df.index[-1] + timedelta(days=1)
@@ -138,23 +181,22 @@ def forecast_trends(df, keywords, days_to_forecast=90):
         
         for kw in keywords:
             if kw in df.columns:
-                # Prepare data for training
-                X = np.array(range(len(df))).reshape(-1, 1)
-                y = df[kw].values
+                # Simple linear extrapolation
+                values = df[kw].values
+                last_value = values[-1]
+                avg_change = np.mean(np.diff(values[-30:]) if len(values) > 30 else np.diff(values))
                 
-                # Train model
-                model = LinearRegression()
-                model.fit(X, y)
-                
-                # Make predictions
-                future_X = np.array(range(len(df), len(df) + len(forecast_dates))).reshape(-1, 1)
-                forecast_values = model.predict(future_X)
-                
-                # Clip values to be between 0 and 100
-                forecast_values = np.clip(forecast_values, 0, 100)
+                # Generate forecast with some randomness
+                forecast = []
+                current = last_value
+                for _ in range(len(forecast_dates)):
+                    current += avg_change + random.uniform(-abs(avg_change)/2, abs(avg_change)/2)
+                    # Keep within bounds
+                    current = max(0, min(100, current))
+                    forecast.append(current)
                 
                 # Add to forecast DataFrame
-                forecast_df[kw] = forecast_values
+                forecast_df[kw] = forecast
         
         return forecast_df
     except Exception as e:
@@ -247,14 +289,13 @@ if debug_mode:
     st.sidebar.info(f"Timeframe: {timeframe_options[timeframe]}")
     st.sidebar.info(f"Geo: {geo}")
 
+# Add a note about mock data
+st.info("⚠️ Using simulated data as a fallback since the Google Trends API is currently not responding. This data is for demonstration purposes only.")
+
 st.header("Overview")
 
-# Disable caching during development if needed
-# st.cache_data.clear()
-# st.cache_resource.clear()
-
-with st.spinner("Fetching Google Trends data..."):
-    interest_over_time_df = fetch_with_fallback(get_interest_over_time, keywords, timeframe_options[timeframe], geo)
+with st.spinner("Fetching data..."):
+    interest_over_time_df = get_interest_over_time(keywords, timeframe_options[timeframe], geo)
     
     if debug_mode and not interest_over_time_df.empty:
         st.sidebar.subheader("Interest Over Time Data Sample")
@@ -314,11 +355,11 @@ st.header("Geographic Insights")
 geo_resolution = "COUNTRY" if geo == "World" else "REGION" if geo == "US" else "DMA"
 with st.spinner("Fetching geographic data..."):
     if geo == "US":
-        geo_data = fetch_with_fallback(get_interest_by_region, keywords, timeframe_options[timeframe], geo, resolution="REGION")
+        geo_data = get_interest_by_region(keywords, timeframe_options[timeframe], geo, resolution="REGION")
     elif geo.startswith("US-"):
-        geo_data = fetch_with_fallback(get_interest_by_dma, keywords, timeframe_options[timeframe], geo="US")
+        geo_data = get_interest_by_dma(keywords, timeframe_options[timeframe], geo="US")
     else:
-        geo_data = fetch_with_fallback(get_interest_by_region, keywords, timeframe_options[timeframe], geo, resolution=geo_resolution)
+        geo_data = get_interest_by_region(keywords, timeframe_options[timeframe], geo, resolution=geo_resolution)
 
 try:
     if not geo_data.empty:
@@ -425,69 +466,6 @@ if geo == "US" or geo.startswith("US-"):
         if debug_mode:
             st.error(traceback.format_exc())
 
-# Competitor Analysis (if enabled)
-if compare_competitors:
-    st.header("Competitor Analysis")
-    
-    with st.spinner("Analyzing competitors..."):
-        # Get related topics to identify potential competitors
-        try:
-            pytrends = get_pytrends_client()
-            time.sleep(random.uniform(1, 3))
-            
-            # Just use the first keyword for competitor analysis
-            main_keyword = keywords[0]
-            pytrends.build_payload([main_keyword], cat=0, timeframe=timeframe_options[timeframe], geo=geo)
-            related_topics = pytrends.related_topics()
-            
-            competitors = []
-            if main_keyword in related_topics and 'rising' in related_topics[main_keyword]:
-                rising_df = related_topics[main_keyword]['rising']
-                if not rising_df.empty:
-                    # Get company names from rising topics
-                    for _, row in rising_df.iterrows():
-                        if 'Hospital' in row['topic_title'] or 'Clinic' in row['topic_title'] or 'Health' in row['topic_title']:
-                            competitors.append(row['topic_title'])
-                    
-                    # Limit to top 3 competitors
-                    competitors = competitors[:3]
-            
-            # Add some default competitors if we didn't find any
-            if len(competitors) < 3:
-                default_competitors = ["Mayo Clinic", "Cleveland Clinic", "Johns Hopkins Hospital", "Kaiser Permanente"]
-                for comp in default_competitors:
-                    if comp not in competitors:
-                        competitors.append(comp)
-                        if len(competitors) >= 3:
-                            break
-            
-            # Compare with competitors
-            if competitors:
-                compare_keywords = [main_keyword] + competitors[:3]  # Main keyword + top 3 competitors
-                
-                # Get interest over time for competitor comparison
-                pytrends.build_payload(compare_keywords, cat=0, timeframe=timeframe_options[timeframe], geo=geo)
-                competitor_df = pytrends.interest_over_time()
-                
-                if not competitor_df.empty:
-                    fig = px.line(
-                        competitor_df, x=competitor_df.index, y=compare_keywords,
-                        title=f"Competitor Comparison: Search Interest for '{main_keyword}' vs. Competitors",
-                        labels={"value": "Search Interest", "variable": "Entity", "date": "Date"}
-                    )
-                    fig.update_layout(xaxis_title="Date", yaxis_title="Search Interest", legend_title="Entity", height=500)
-                    st.plotly_chart(fig, use_container_width=True)
-                    show_download_button(competitor_df, "Download Competitor Data", "competitor_comparison.csv")
-                else:
-                    st.warning("No competitor comparison data available for the selected parameters.")
-            else:
-                st.warning("No competitors identified for comparison.")
-                
-        except Exception as e:
-            st.error(f"Error performing competitor analysis: {e}")
-            if debug_mode:
-                st.error(traceback.format_exc())
-
 # Healthcare Insights section
 st.header("Healthcare Search Insights")
 
@@ -555,20 +533,13 @@ with healthcare_tabs[2]:
 
 # Add footer
 st.markdown("---")
-st.markdown("Healthcare SEO & Trends Dashboard | Data from Google Trends")
+st.markdown("Healthcare SEO & Trends Dashboard | Using Simulated Data")
 st.markdown(f"Last updated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 # Add an "About" expander at the bottom
 with st.expander("About this dashboard"):
     st.markdown("""
-    This dashboard uses Google Trends data to analyze healthcare-related search trends. The data is not guaranteed to be completely accurate and should be used for informational purposes only.
+    This dashboard uses simulated data to demonstrate how healthcare-related search trends would appear. In a production environment, this would use actual Google Trends data.
     
-    **Data sources**:
-    - Search interest over time: Google Trends
-    - Geographic interest data: Google Trends
-    - Related queries: Google Trends
-    - Trending searches: Google Trends
-    
-    **Note**: Google Trends data is normalized and presented on a scale from 0-100, where 100 represents the peak popularity of a term during the specified time period.
+    **Note**: The data shown is simulated and does not represent actual Google Trends data.
     """)
-
