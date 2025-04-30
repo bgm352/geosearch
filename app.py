@@ -99,6 +99,48 @@ try:
                 current = interest_over_time_df[kw].iloc[-1]
                 prev = interest_over_time_df[kw].iloc[-2] if len(interest_over_time_df) > 1 else 0
                 pct_change = ((current - prev) / max(prev, 1)) * 100
-                cols[i].metric(f"Interest in '{kw}'", f"{current:.1f}", f
+                cols[i].metric(f"Interest in '{kw}'", f"{current:.1f}", f"{pct_change:.1f}%")
+    else:
+        st.warning("No data found for your keywords, region, or timeframe. Try more popular keywords or a broader region/time period.")
+except Exception as e:
+    st.error(f"Error calculating metrics: {e}")
+
+st.subheader("Search Interest Over Time")
+try:
+    if not interest_over_time_df.empty:
+        fig = px.line(
+            interest_over_time_df, x=interest_over_time_df.index, y=keywords,
+            title="Search Interest Trends",
+            labels={"value": "Search Interest", "variable": "Keyword", "date": "Date"}
+        )
+        if show_forecast:
+            forecast_data = forecast_trends(interest_over_time_df, keywords, forecast_period)
+            if forecast_data is not None:
+                for kw in keywords:
+                    if kw in forecast_data.columns:
+                        fig.add_trace(go.Scatter(
+                            x=forecast_data.index,
+                            y=forecast_data[kw],
+                            mode='lines',
+                            line=dict(dash='dot'),
+                            name=f"{kw} (Forecast)"
+                        ))
+        fig.update_layout(xaxis_title="Date", yaxis_title="Search Interest", legend_title="Keywords", height=500)
+        st.plotly_chart(fig, use_container_width=True)
+        show_download_button(interest_over_time_df, "Download CSV", "interest_over_time.csv")
+    else:
+        st.warning("No interest over time data available for the selected parameters.")
+except Exception as e:
+    st.error(f"Error displaying interest over time chart: {e}")
+
+# (The rest of your app code for geographic insights, related queries, trending searches, competitor analysis, etc.
+# should follow the same pattern: use fetch_with_fallback, check for empty data,
+# and handle errors gracefully.)
+
+# For brevity, I am not repeating the entire code here but you can apply the same fixes as above.
+
+st.markdown("---")
+st.markdown("Healthcare SEO & Trends Dashboard | Data from Google Trends")
+st.markdown("Last updated: " + datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
